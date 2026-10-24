@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PvP Math Duel</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .screen { display: none; width: 400px; text-align: center; padding: 32px 24px; }
+  .screen.active { display: block; }
+
+  h1 { font-size: 2rem; font-weight: 800; color: #7dd3fc; margin-bottom: 8px; }
+  h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 16px; }
+  p.sub { color: #94a3b8; font-size: 0.9rem; margin-bottom: 24px; }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 1.1rem;
+    border-radius: 10px;
+    border: 2px solid #334155;
+    background: #1e293b;
+    color: #f1f5f9;
+    margin-bottom: 14px;
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: #0ea5e9; }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 10px;
+    border: none;
+    background: #0ea5e9;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: #0284c7; }
+  .btn.secondary { background: #334155; color: #94a3b8; }
+  .btn.secondary:hover { background: #475569; color: #f1f5f9; }
+  .btn.danger { background: #ef4444; }
+  .btn.danger:hover { background: #dc2626; }
+  .btn.green { background: #22c55e; }
+  .btn.green:hover { background: #16a34a; }
+
+  /* Queue screen */
+  .spinner {
+    width: 48px; height: 48px;
+    border: 4px solid #1e293b;
+    border-top-color: #0ea5e9;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Game screen */
+  .scoreboard {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 14px 20px;
+    margin-bottom: 20px;
+  }
+  .player-score { text-align: center; }
+  .player-score .name { font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px; }
+  .player-score .pts { font-size: 2rem; font-weight: 800; }
+  .player-score.me .pts { color: #22c55e; }
+  .player-score.opp .pts { color: #f87171; }
+  .vs { font-size: 1rem; font-weight: 700; color: #475569; }
+
+  .round-label { font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px; }
+
+  /* Timer bar */
+  .timer-track {
+    width: 100%; height: 8px;
+    background: #1e293b; border-radius: 4px;
+    overflow: hidden; margin-bottom: 6px;
+  }
+  .timer-bar {
+    height: 100%; width: 100%;
+    background: #22c55e; border-radius: 4px;
+    transition: background 0.3s;
+  }
+  .timer-label { font-size: 0.75rem; color: #94a3b8; margin-bottom: 24px; }
+
+  .question {
+    font-size: 2.6rem; font-weight: 800;
+    letter-spacing: 2px; margin-bottom: 20px;
+    min-height: 52px;
+  }
+
+  .answer-row { display: flex; gap: 10px; margin-bottom: 12px; }
+  input[type="number"] {
+    flex: 1; padding: 12px 16px;
+    font-size: 1.3rem; border-radius: 10px;
+    border: 2px solid #334155; background: #1e293b;
+    color: #f1f5f9; text-align: center; outline: none;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]:focus { border-color: #0ea5e9; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .submit-btn {
+    padding: 12px 20px; font-size: 1rem; font-weight: 700;
+    border-radius: 10px; border: none;
+    background: #0ea5e9; color: #fff; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .submit-btn:hover { background: #0284c7; }
+  .submit-btn:disabled { background: #334155; cursor: default; }
+
+  .feedback {
+    font-size: 1rem; font-weight: 600;
+    min-height: 24px; margin-bottom: 8px;
+  }
+  .feedback.correct { color: #22c55e; }
+  .feedback.wrong { color: #ef4444; }
+  .feedback.info { color: #f59e0b; }
+
+  /* End screen */
+  .result-banner {
+    font-size: 3rem; font-weight: 900;
+    margin-bottom: 8px;
+  }
+  .result-banner.win { color: #22c55e; }
+  .result-banner.lose { color: #ef4444; }
+  .result-banner.draw { color: #f59e0b; }
+  .final-scores {
+    background: #1e293b; border-radius: 12px;
+    padding: 16px 20px; margin: 20px 0;
+    font-size: 1rem;
+  }
+  .final-scores .row {
+    display: flex; justify-content: space-between;
+    padding: 6px 0; border-bottom: 1px solid #334155;
+  }
+  .final-scores .row:last-child { border: none; }
+  .final-scores .row .pts { font-weight: 700; color: #7dd3fc; }
+</style>
+</head>
+<body>
+
+<!-- Lobby -->
+<div class="screen active" id="lobbyScreen">
+  <h1>⚡ Math Duel</h1>
+  <p class="sub">First to 10 correct answers wins</p>
+  <input type="text" id="nameInput" placeholder="Your name" maxlength="16">
+  <button class="btn" onclick="joinQueue()">Find Match</button>
+</div>
+
+<!-- Queue -->
+<div class="screen" id="queueScreen">
+  <div class="spinner"></div>
+  <h2>Looking for opponent…</h2>
+  <p class="sub" id="queuePos">You're in the queue</p>
+  <br>
+  <button class="btn secondary" onclick="leaveQueue()">Cancel</button>
+</div>
+
+<!-- Game -->
+<div class="screen" id="gameScreen">
+  <div class="scoreboard">
+    <div class="player-score me">
+      <div class="name" id="myName">You</div>
+      <div class="pts" id="myScore">0</div>
+    </div>
+    <div class="vs">VS</div>
+    <div class="player-score opp">
+      <div class="name" id="oppName">Opponent</div>
+      <div class="pts" id="oppScore">0</div>
+    </div>
+  </div>
+
+  <div class="round-label" id="roundLabel">Round 1 / 10</div>
+  <div class="timer-track"><div class="timer-bar" id="timerBar"></div></div>
+  <div class="timer-label" id="timerLabel">15s</div>
+
+  <div class="question" id="question">?</div>
+
+  <div class="answer-row">
+    <input type="number" id="answerInput" placeholder="?" onkeydown="if(event.key==='Enter')submitAnswer()">
+    <button class="submit-btn" id="submitBtn" onclick="submitAnswer()">✓</button>
+  </div>
+  <div class="feedback" id="feedback"></div>
+</div>
+
+<!-- End -->
+<div class="screen" id="endScreen">
+  <div class="result-banner" id="resultBanner">?</div>
+  <h2 id="resultMsg"></h2>
+  <div class="final-scores" id="finalScores"></div>
+  <button class="btn green" onclick="playAgain()">Play Again</button>
+</div>
+
+<script>
+  const socket = io();
+  let myName = '';
+  let timeLimit = 15;
+  let timerInterval = null;
+  let timeLeft = 15;
+  let answered = false;
+
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function joinQueue() {
+    myName = document.getElementById('nameInput').value.trim() || 'Player';
+    socket.emit('join_queue', { name: myName });
+    show('queueScreen');
+  }
+
+  function leaveQueue() {
+    socket.emit('leave_queue');
+    show('lobbyScreen');
+  }
+
+  function submitAnswer() {
+    if (answered) return;
+    const val = document.getElementById('answerInput').value;
+    if (val === '') return;
+    answered = true;
+    document.getElementById('submitBtn').disabled = true;
+    socket.emit('submit_answer', { answer: parseInt(val, 10) });
+  }
+
+  function startTimer(seconds) {
+    clearInterval(timerInterval);
+    timeLeft = seconds;
+    timeLimit = seconds;
+    updateTimerUI();
+    timerInterval = setInterval(() => {
+      timeLeft -= 0.1;
+      if (timeLeft <= 0) { timeLeft = 0; clearInterval(timerInterval); }
+      updateTimerUI();
+    }, 100);
+  }
+
+  function updateTimerUI() {
+    const pct = (timeLeft / timeLimit) * 100;
+    const bar = document.getElementById('timerBar');
+    bar.style.width = pct + '%';
+    bar.style.background = pct > 50 ? '#22c55e' : pct > 25 ? '#f59e0b' : '#ef4444';
+    document.getElementById('timerLabel').textContent = Math.ceil(timeLeft) + 's';
+  }
+
+  function resetRound() {
+    answered = false;
+    document.getElementById('answerInput').value = '';
+    document.getElementById('answerInput').disabled = false;
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('feedback').textContent = '';
+    document.getElementById('feedback').className = 'feedback';
+    document.getElementById('answerInput').focus();
+  }
+
+  // --- Socket events ---
+
+  socket.on('queued', ({ position }) => {
+    document.getElementById('queuePos').textContent =
+      position === 1 ? 'Waiting for an opponent…' : `${position} players in queue`;
+  });
+
+  socket.on('game_start', ({ opponent, question, round, rounds, timeLimit: tl }) => {
+    document.getElementById('myName').textContent = myName;
+    document.getElementById('oppName').textContent = opponent;
+    document.getElementById('myScore').textContent = '0';
+    document.getElementById('oppScore').textContent = '0';
+    document.getElementById('question').textContent = question;
+    document.getElementById('roundLabel').textContent = `Round ${round} / ${rounds}`;
+    resetRound();
+    startTimer(tl);
+    show('gameScreen');
+  });
+
+  socket.on('wrong_answer', () => {
+    const fb = document.getElementById('feedback');
+    fb.textContent = '✗ Wrong — wait for the round to end';
+    fb.className = 'feedback wrong';
+  });
+
+  socket.on('round_result', ({ correct, scorer, correctAnswer, scores }) => {
+    clearInterval(timerInterval);
+    const fb = document.getElementById('feedback');
+    if (scorer === myName) {
+      fb.textContent = '✓ You got it!';
+      fb.className = 'feedback correct';
+    } else {
+      fb.textContent = `✗ ${scorer} got it! Answer: ${correctAnswer}`;
+      fb.className = 'feedback wrong';
+    }
+    // update scores
+    for (const s of scores) {
+      if (s.name === myName) document.getElementById('myScore').textContent = s.score;
+      else document.getElementById('oppScore').textContent = s.score;
+    }
+    document.getElementById('answerInput').disabled = true;
+    document.getElementById('submitBtn').disabled = true;
+  });
+
+  socket.on('question_timeout', ({ correctAnswer }) => {
+    clearInterval(timerInterval);
+    const fb = document.getElementById('feedback');
+    fb.textContent = `⏱ Time's up! Answer: ${correctAnswer}`;
+    fb.className = 'feedback info';
+    document.getElementById('answerInput').disabled = true;
+    document.getElementById('submitBtn').disabled = true;
+  });
+
+  socket.on('next_question', ({ question, round, scores, timeLimit: tl }) => {
+    document.getElementById('question').textContent = question;
+    document.getElementById('roundLabel').textContent = `Round ${round} / 10`;
+    for (const s of scores) {
+      if (s.name === myName) document.getElementById('myScore').textContent = s.score;
+      else document.getElementById('oppScore').textContent = s.score;
+    }
+    resetRound();
+    startTimer(tl);
+  });
+
+  socket.on('game_over', ({ winner, scores }) => {
+    clearInterval(timerInterval);
+    const banner = document.getElementById('resultBanner');
+    const msg = document.getElementById('resultMsg');
+    if (winner === myName) {
+      banner.textContent = '🏆 You Win!';
+      banner.className = 'result-banner win';
+      msg.textContent = 'Great job!';
+    } else {
+      banner.textContent = '💀 You Lose';
+      banner.className = 'result-banner lose';
+      msg.textContent = `${winner} wins this time.`;
+    }
+    const fs = document.getElementById('finalScores');
+    fs.innerHTML = scores.map(s =>
+      `<div class="row"><span>${s.name}</span><span class="pts">${s.score} pts</span></div>`
+    ).join('');
+    show('endScreen');
+  });
+
+  socket.on('opponent_disconnected', () => {
+    clearInterval(timerInterval);
+    const banner = document.getElementById('resultBanner');
+    banner.textContent = '🏆 You Win!';
+    banner.className = 'result-banner win';
+    document.getElementById('resultMsg').textContent = 'Opponent disconnected.';
+    document.getElementById('finalScores').innerHTML = '';
+    show('endScreen');
+  });
+
+  function playAgain() {
+    show('lobbyScreen');
+    document.getElementById('nameInput').value = myName;
+  }
+</script>
+</body>
+</html>
